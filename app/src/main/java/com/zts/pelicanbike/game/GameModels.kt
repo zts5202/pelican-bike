@@ -58,4 +58,12 @@ object Physics {
     const val HitScale = 0.85f
     const val GroundFrac = 0.20f
     const val PlayerXFrac = 0.28f
+    /** Spawn Y as fraction of canvas height (mid-air; was ground-hugging). */
+    const val StartYFrac = 0.45f
+    /** First pipe offset past right edge (dp). */
+    const val FirstPipeOffset = 220f
+    /** Invincible duration after start/restart (seconds). */
+    const val StartInvincible = 0.7f
+    /** Opening upward boost as fraction of [JumpVelocity]. */
+    const val StartVyFrac = 0.35f
 }

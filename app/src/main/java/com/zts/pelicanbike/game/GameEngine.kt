@@ -34,6 +34,8 @@ class GameEngine(
     private var flashTimer = 0f
     private var pendingGameOver = false
     private var spawnCursor = 0f
+    /** Remaining invincible time (s) after start/restart; skips ground/pipe collision. */
+    private var invincibleLeft = 0f
 
     val groundTop: Float get() = height * (1f - Physics.GroundFrac)
 
@@ -55,18 +57,21 @@ class GameEngine(
     fun startGame() {
         resetWorld(keepScore = false)
         phase = ScreenPhase.Playing
+        invincibleLeft = Physics.StartInvincible
         isNewRecord = false
     }
 
     fun restartGame() {
         resetWorld(keepScore = false)
         phase = ScreenPhase.Playing
+        invincibleLeft = Physics.StartInvincible
         isNewRecord = false
     }
 
     fun backToTitle() {
         resetWorld(keepScore = true)
         phase = ScreenPhase.Start
+        invincibleLeft = 0f
         isNewRecord = false
     }
 
@@ -89,11 +94,19 @@ class GameEngine(
         shakeX = 0f
         flashTimer = 0f
         pendingGameOver = false
+        invincibleLeft = 0f
         pipes.clear()
         val px = width * Physics.PlayerXFrac
-        val py = groundTop - Physics.PlayerH * 0.55f
-        player = Player(x = px, y = py, vy = 0f, wheelAngle = 0f, bobPhase = 0f)
-        spawnCursor = width + 80f
+        // Mid-air spawn (was ground-hugging → instant crash on first frames)
+        val py = height * Physics.StartYFrac
+        player = Player(
+            x = px,
+            y = py,
+            vy = Physics.JumpVelocity * Physics.StartVyFrac,
+            wheelAngle = 0f,
+            bobPhase = 0f,
+        )
+        spawnCursor = width + Physics.FirstPipeOffset
         // seed a few pipes ahead
         repeat(4) { spawnPipe() }
     }
@@ -164,6 +177,9 @@ class GameEngine(
     }
 
     private fun stepPlaying(dt: Float) {
+        if (invincibleLeft > 0f) {
+            invincibleLeft = max(0f, invincibleLeft - dt)
+        }
         scrollSpeed = min(
             Physics.ScrollMax,
             Physics.Scroll0 + (score / 5) * Physics.ScrollGainEvery5,
@@ -218,6 +234,23 @@ class GameEngine(
                 pipes[i] = p.copy(scored = true)
                 score += 1
             }
+        }
+
+        // During start invincibility: skip lethal hits; bounce off floor/ceiling
+        // so the player is still airborne when invincibility ends.
+        if (invincibleLeft > 0f) {
+            var cy = player.y
+            var cvy = player.vy
+            if (bottom >= groundTop) {
+                cy = groundTop - hitH / 2f - 1f
+                cvy = Physics.JumpVelocity * 0.55f
+            }
+            if (top <= 0f) {
+                cy = hitH / 2f + 1f
+                cvy = max(cvy, -Physics.JumpVelocity * 0.25f)
+            }
+            player = player.copy(y = cy, vy = cvy)
+            return
         }
 
         // collisions: ground / ceiling
