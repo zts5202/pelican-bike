@@ -36,7 +36,7 @@ class GameEngine(
     private var flashTimer = 0f
     private var pendingGameOver = false
     private var spawnCursor = 0f
-    /** Remaining invincible time (s) after start/restart; skips ground/pipe collision. */
+    /** Remaining invincible time (s) after start/restart; skips pipe/ceiling collision (ground always clamps). */
     private var invincibleLeft = 0f
     private var wasAirborne = true
     private val dust = mutableListOf<DustParticle>()
@@ -316,40 +316,51 @@ class GameEngine(
 
         tickFx(dt)
 
-        // During start invincibility: skip lethal hits; bounce off floor/ceiling
-        // so the player is still airborne when invincibility ends.
-        if (invincibleLeft > 0f) {
-            var cy = player.y
-            var cvy = player.vy
-            if (bottom >= groundTop) {
-                cy = groundTop - hitH / 2f - 1f
-                cvy = Physics.JumpVelocity * 0.55f
-                if (wasAirborne) {
-                    spawnDust()
-                    wasAirborne = false
-                }
-            }
-            if (top <= 0f) {
-                cy = hitH / 2f + 1f
-                cvy = max(cvy, -Physics.JumpVelocity * 0.25f)
+        // Ground never kills: clamp feet to groundTop and clear downward velocity.
+        // Jump still works (sets negative vy). Invincibility only skips pipe/ceiling hits.
+        var cy = player.y
+        var cvy = player.vy
+        val bottomNow = cy + hitH / 2f
+        if (bottomNow >= groundTop) {
+            cy = groundTop - hitH / 2f
+            cvy = min(cvy, 0f)
+            if (wasAirborne) {
+                spawnDust()
+                wasAirborne = false
             }
             player = player.copy(y = cy, vy = cvy)
+        }
+
+        if (invincibleLeft > 0f) {
+            // Soft ceiling clamp only while invincible (no crash)
+            val topNow = player.y - hitH / 2f
+            if (topNow <= 0f) {
+                player = player.copy(
+                    y = hitH / 2f + 1f,
+                    vy = max(player.vy, 0f),
+                )
+            }
             return
         }
 
-        // collisions: ground / ceiling
-        if (bottom >= groundTop || top <= 0f) {
+        // Lethal: ceiling only (not ground)
+        val topLethal = player.y - hitH / 2f
+        if (topLethal <= 0f) {
             triggerCrash()
             return
         }
         // pipes AABB
+        val left2 = player.x - hitW / 2f
+        val right2 = player.x + hitW / 2f
+        val top2 = player.y - hitH / 2f
+        val bottom2 = player.y + hitH / 2f
         for (p in pipes) {
             val gapTop = p.gapCenterY - p.gapHeight / 2f
             val gapBot = p.gapCenterY + p.gapHeight / 2f
             val pipeL = p.x
             val pipeR = p.x + Physics.PipeWidth
-            if (right > pipeL && left < pipeR) {
-                if (top < gapTop || bottom > gapBot) {
+            if (right2 > pipeL && left2 < pipeR) {
+                if (top2 < gapTop || bottom2 > gapBot) {
                     triggerCrash()
                     return
                 }
