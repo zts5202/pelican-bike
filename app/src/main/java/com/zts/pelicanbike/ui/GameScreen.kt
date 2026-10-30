@@ -66,7 +66,7 @@ fun GameScreen(vm: GameViewModel) {
     LaunchedEffect(world.score) {
         if (world.score > lastScore && world.phase == ScreenPhase.Playing) {
             scorePulse = true
-            kotlinx.coroutines.delay(200)
+            kotlinx.coroutines.delay(280)
             scorePulse = false
         }
         lastScore = world.score

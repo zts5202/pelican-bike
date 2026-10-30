@@ -1,5 +1,6 @@
 package com.zts.pelicanbike.game
 
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.random.Random
@@ -29,6 +30,7 @@ class GameEngine(
     private var groundOffset = 0f
     private var parallax0 = 0f
     private var parallax1 = 0f
+    private var parallax2 = 0f
     private var flashAlpha = 0f
     private var shakeX = 0f
     private var flashTimer = 0f
@@ -36,6 +38,9 @@ class GameEngine(
     private var spawnCursor = 0f
     /** Remaining invincible time (s) after start/restart; skips ground/pipe collision. */
     private var invincibleLeft = 0f
+    private var wasAirborne = true
+    private val dust = mutableListOf<DustParticle>()
+    private var plusOne: PlusOneFx? = null
 
     val groundTop: Float get() = height * (1f - Physics.GroundFrac)
 
@@ -78,6 +83,7 @@ class GameEngine(
     fun jump() {
         if (phase != ScreenPhase.Playing || pendingGameOver) return
         player = player.copy(vy = Physics.JumpVelocity)
+        wasAirborne = true
     }
 
     fun toggleMute() {
@@ -90,11 +96,15 @@ class GameEngine(
         groundOffset = 0f
         parallax0 = 0f
         parallax1 = 0f
+        parallax2 = 0f
         flashAlpha = 0f
         shakeX = 0f
         flashTimer = 0f
         pendingGameOver = false
         invincibleLeft = 0f
+        wasAirborne = true
+        dust.clear()
+        plusOne = null
         pipes.clear()
         val px = width * Physics.PlayerXFrac
         // Mid-air spawn (was ground-hugging → instant crash on first frames)
@@ -121,6 +131,14 @@ class GameEngine(
         return max(Physics.PipeSpacingMin, Physics.PipeSpacingStart - steps * 10f)
     }
 
+    private fun randomSkin(): ObstacleSkin {
+        return when (random.nextInt(3)) {
+            0 -> ObstacleSkin.Barricade
+            1 -> ObstacleSkin.Arch
+            else -> ObstacleSkin.Stump
+        }
+    }
+
     private fun spawnPipe() {
         val gap = gapHeightForScore()
         val minCenter = gap / 2f + 48f
@@ -130,7 +148,12 @@ class GameEngine(
         } else {
             minCenter + random.nextFloat() * (maxCenter - minCenter)
         }
-        pipes += PipePair(x = spawnCursor, gapCenterY = center, gapHeight = gap)
+        pipes += PipePair(
+            x = spawnCursor,
+            gapCenterY = center,
+            gapHeight = gap,
+            skin = randomSkin(),
+        )
         spawnCursor += spacingForScore()
     }
 
@@ -141,12 +164,14 @@ class GameEngine(
                 // slow preview scroll
                 val preview = 24f
                 groundOffset = (groundOffset + preview * clampedDt) % 60f
-                parallax0 = (parallax0 + preview * 0.2f * clampedDt) % (width + 200f)
-                parallax1 = (parallax1 + preview * 0.5f * clampedDt) % (width + 200f)
+                parallax0 = (parallax0 + preview * 0.15f * clampedDt) % (width + 200f)
+                parallax1 = (parallax1 + preview * 0.25f * clampedDt) % (width + 200f)
+                parallax2 = (parallax2 + preview * 0.45f * clampedDt) % (width + 200f)
                 player = player.copy(
                     bobPhase = player.bobPhase + clampedDt * (Math.PI.toFloat() * 2f / 0.28f),
-                    wheelAngle = player.wheelAngle + (preview / 14f) * clampedDt,
+                    wheelAngle = player.wheelAngle + (preview / Physics.RearWheelR) * clampedDt,
                 )
+                tickFx(clampedDt)
             }
             ScreenPhase.Playing -> {
                 if (pendingGameOver) {
@@ -155,6 +180,7 @@ class GameEngine(
                     shakeX = if (flashTimer > 0.04f) {
                         if (((flashTimer * 40).toInt() % 2) == 0) 3f else -3f
                     } else 0f
+                    tickFx(clampedDt)
                     if (flashTimer <= 0f) {
                         flashAlpha = 0f
                         shakeX = 0f
@@ -170,10 +196,51 @@ class GameEngine(
                 }
             }
             ScreenPhase.GameOver -> {
-                // freeze world
+                // freeze world; let +1/dust finish fading
+                tickFx(clampedDt)
             }
         }
         return snapshot()
+    }
+
+    private fun tickFx(dt: Float) {
+        if (dust.isNotEmpty()) {
+            val next = ArrayList<DustParticle>(dust.size)
+            for (d in dust) {
+                val age = d.age + dt
+                if (age < d.life) {
+                    next += d.copy(
+                        x = d.x + d.vx * dt,
+                        y = d.y + d.vy * dt,
+                        age = age,
+                        vy = d.vy + 40f * dt,
+                    )
+                }
+            }
+            dust.clear()
+            dust.addAll(next)
+        }
+        plusOne?.let { p ->
+            val age = p.age + dt
+            plusOne = if (age >= p.life) null else p.copy(age = age)
+        }
+    }
+
+    private fun spawnDust() {
+        dust.clear()
+        val hitch = Physics.PlayerH * Physics.HitScale
+        val footY = player.y + hitch / 2f
+        val baseX = player.x - 18f // near rear wheel in bbox
+        val offsets = floatArrayOf(-14f, -6f, 6f, 14f)
+        for (ox in offsets) {
+            dust += DustParticle(
+                x = baseX + ox,
+                y = footY,
+                vx = ox * 1.2f,
+                vy = -30f - abs(ox) * 0.4f,
+                age = 0f,
+            )
+        }
     }
 
     private fun stepPlaying(dt: Float) {
@@ -189,8 +256,7 @@ class GameEngine(
         vy = min(vy, Physics.MaxFall)
         var y = player.y + vy * dt
         val bob = player.bobPhase + dt * (Math.PI.toFloat() * 2f / 0.28f)
-        val wheelR = 14f
-        val wheelAng = player.wheelAngle + (scrollSpeed / wheelR) * dt
+        val wheelAng = player.wheelAngle + (scrollSpeed / Physics.RearWheelR) * dt
         player = player.copy(
             y = y,
             vy = vy,
@@ -199,8 +265,9 @@ class GameEngine(
             x = width * Physics.PlayerXFrac,
         )
         groundOffset = (groundOffset + scrollSpeed * dt) % 60f
-        parallax0 = (parallax0 + scrollSpeed * 0.2f * dt) % (width + 200f)
-        parallax1 = (parallax1 + scrollSpeed * 0.5f * dt) % (width + 200f)
+        parallax0 = (parallax0 + scrollSpeed * 0.15f * dt) % (width + 200f)
+        parallax1 = (parallax1 + scrollSpeed * 0.25f * dt) % (width + 200f)
+        parallax2 = (parallax2 + scrollSpeed * 0.45f * dt) % (width + 200f)
 
         // move pipes
         for (i in pipes.indices) {
@@ -233,8 +300,21 @@ class GameEngine(
             if (!p.scored && px > p.x + Physics.PipeWidth) {
                 pipes[i] = p.copy(scored = true)
                 score += 1
+                plusOne = PlusOneFx(x = px + 20f, y = py - hitH / 2f - 8f, age = 0f)
             }
         }
+
+        // Landing dust: was airborne, now near ground with vy>=0
+        val nearGround = bottom >= groundTop - 3f && bottom <= groundTop + 6f
+        if (wasAirborne && nearGround && player.vy >= 0f) {
+            spawnDust()
+            wasAirborne = false
+        }
+        if (bottom < groundTop - 8f || player.vy < -40f) {
+            wasAirborne = true
+        }
+
+        tickFx(dt)
 
         // During start invincibility: skip lethal hits; bounce off floor/ceiling
         // so the player is still airborne when invincibility ends.
@@ -244,6 +324,10 @@ class GameEngine(
             if (bottom >= groundTop) {
                 cy = groundTop - hitH / 2f - 1f
                 cvy = Physics.JumpVelocity * 0.55f
+                if (wasAirborne) {
+                    spawnDust()
+                    wasAirborne = false
+                }
             }
             if (top <= 0f) {
                 cy = hitH / 2f + 1f
@@ -291,6 +375,9 @@ class GameEngine(
         groundOffset = groundOffset,
         parallax0 = parallax0,
         parallax1 = parallax1,
+        parallax2 = parallax2,
+        dust = dust.toList(),
+        plusOne = plusOne,
         flashAlpha = flashAlpha,
         shakeX = shakeX,
         width = width,

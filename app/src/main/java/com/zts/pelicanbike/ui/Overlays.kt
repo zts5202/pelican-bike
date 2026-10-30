@@ -2,12 +2,10 @@ package com.zts.pelicanbike.ui
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.CubicBezierEasing
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -85,9 +83,15 @@ fun StartOverlay(
                     fontFamily = FontFamily.SansSerif,
                     color = PbColors.ink,
                 )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(6.dp))
+                PelicanSilhouette(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(42.dp),
+                )
+                Spacer(Modifier.height(6.dp))
                 Text(
-                    text = "点按跳跃 · 躲开柱子",
+                    text = "点按跳跃 · 躲开障碍",
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Normal,
                     color = PbColors.inkMuted,
@@ -113,8 +117,8 @@ fun PlayingHud(
     modifier: Modifier = Modifier,
 ) {
     val scale by animateFloatAsState(
-        targetValue = if (scorePulse) 1.12f else 1f,
-        animationSpec = tween(200),
+        targetValue = if (scorePulse) 1.14f else 1f,
+        animationSpec = tween(280, easing = EnterEasing),
         label = "scorePulse",
     )
     Box(

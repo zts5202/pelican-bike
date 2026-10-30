@@ -7,11 +7,18 @@ enum class ScreenPhase {
     GameOver,
 }
 
+enum class ObstacleSkin {
+    Barricade,
+    Arch,
+    Stump,
+}
+
 data class PipePair(
     val x: Float,
     val gapCenterY: Float,
     val gapHeight: Float,
     val scored: Boolean = false,
+    val skin: ObstacleSkin = ObstacleSkin.Barricade,
 )
 
 data class Player(
@@ -20,6 +27,24 @@ data class Player(
     val vy: Float,
     val wheelAngle: Float = 0f,
     val bobPhase: Float = 0f,
+)
+
+/** Landing dust puff particle (engine units = dp). */
+data class DustParticle(
+    val x: Float,
+    val y: Float,
+    val vx: Float,
+    val vy: Float,
+    val age: Float,
+    val life: Float = 0.22f,
+)
+
+/** Optional "+1" float after scoring. */
+data class PlusOneFx(
+    val x: Float,
+    val y: Float,
+    val age: Float,
+    val life: Float = 0.28f,
 )
 
 data class WorldSnapshot(
@@ -33,6 +58,9 @@ data class WorldSnapshot(
     val groundOffset: Float,
     val parallax0: Float,
     val parallax1: Float,
+    val parallax2: Float,
+    val dust: List<DustParticle>,
+    val plusOne: PlusOneFx?,
     val flashAlpha: Float,
     val shakeX: Float,
     val width: Float,
@@ -53,9 +81,11 @@ object Physics {
     const val GapMin = 120f
     const val PipeSpacingStart = 240f
     const val PipeSpacingMin = 160f
-    const val PlayerW = 80f
-    const val PlayerH = 60f
-    const val HitScale = 0.85f
+    /** Visual bbox (v2). */
+    const val PlayerW = 100f
+    const val PlayerH = 76f
+    /** Collision scale vs bbox (v2 slightly more forgiving). */
+    const val HitScale = 0.82f
     const val GroundFrac = 0.20f
     const val PlayerXFrac = 0.28f
     /** Spawn Y as fraction of canvas height (mid-air; was ground-hugging). */
@@ -66,4 +96,5 @@ object Physics {
     const val StartInvincible = 0.7f
     /** Opening upward boost as fraction of [JumpVelocity]. */
     const val StartVyFrac = 0.35f
+    const val RearWheelR = 16f
 }
